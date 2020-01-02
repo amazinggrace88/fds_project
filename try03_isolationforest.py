@@ -17,27 +17,6 @@ import itertools
 from mpl_toolkits.mplot3d import Axes3D
 
 
-def classification_result3d(X, y, title=""):
-    pass
-
-def confusion_matrix_myplot(class_name, pred_outlier, y_test, normalize=False, title='Confusion Matrix', cmap=plt.cm.Blues):
-    cm = confusion_matrix(y_train, predict_outlier)
-    plt.imshow(cm, interpolation='nearest', cmap=cmap)  # imshow - image show 2D
-    plt.title(title)
-    plt.colorbar()
-    tick_marks = np.arange(len(class_column))
-    plt.xticks(tick_marks, class_name, rotation=0)
-    plt.yticks(tick_marks, class_name)
-
-    if normalize:  # normalize = False
-        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-    thresh = cm.max() / 2.
-    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):  # 곱집합 생
-        plt.text(j, i, cm[i, j],
-                 horizontalalignment="center",
-                 color="white" if cm[i, j] > thresh else "black")
-
-
 if __name__ == '__main__':
     # bring the data!
     creditcard = pd.read_csv('creditcard_fds.csv')
@@ -98,8 +77,6 @@ if __name__ == '__main__':
     sampler = RandomUnderSampler(random_state=0)
     X_train, y_train = sampler.fit_sample(X_train, y_train)
     print('Class after Undersampling : \n', Counter(y_train))  # Counter({0: 385, 1: 385}) 5:5 비율
-    sampler = RandomUnderSampler(random_state=0)
-    X_test, y_test = sampler.fit_sample(X_test, y_test)
 
     # 3. Isolation Forest 적용
     # 파라미터 : n_estimators - 노드 수, contamination - 이상치 비율
@@ -116,6 +93,17 @@ if __name__ == '__main__':
     print('Confusion Matrix : \n', confusion_matrix(predict_outlier, y_train))
     print('Classification Report : \n', classification_report(predict_outlier, y_train))
 
-    # confusion matrix plot 함수 적용
-    class_name = [0, 1]
-    print('Confusion Matrix : \n', confusion_matrix_myplot(class_name, predict_outlier, y_test))
+    # 5. 시각화
+    # plot 2d - 차원 축소
+    plt.scatter(X_train.iloc[:, 0], X_train.iloc[:, 1], c=predict_outlier, cmap='Paired', s=40, edgecolors='white')
+    # plt.title("Isolation Forest")
+    # plt.show()
+
+    # plot 3d - 차원 축소
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    # ax.scatter(X_train.iloc[:, 0], X_train.iloc[:, 1], X_train.iloc[:, 2], c=predict_outlier)
+    # ax.set_xlabel('pcomp 1')
+    # ax.set_ylabel('pcomp 2')
+    # ax.set_zlabel('pcomp 3')
+    # plt.show()
