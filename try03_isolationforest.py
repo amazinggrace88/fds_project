@@ -5,29 +5,117 @@ R fds project in python
 """
 import numpy as np
 import pandas as pd
+from pandas import DataFrame
 from collections import Counter
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.preprocessing import MinMaxScaler
+from imblearn.under_sampling import RandomUnderSampler
+from sklearn.ensemble import IsolationForest
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, plot_confusion_matrix
+import itertools
+from mpl_toolkits.mplot3d import Axes3D
 
-# bring the data!
-creditcard = pd.read_csv('creditcard_fds.csv')
 
-"""
-what is Isolation Forest?
+def classification_result3d(X, y, title=""):
+    pass
 
-- The IsolationForest ‘isolates’ observations by randomly selecting a feature 
-and then randomly selecting a split value between the maximum and minimum values of the selected feature.
+def confusion_matrix_myplot(class_name, pred_outlier, y_test, normalize=False, title='Confusion Matrix', cmap=plt.cm.Blues):
+    cm = confusion_matrix(y_train, predict_outlier)
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)  # imshow - image show 2D
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(class_column))
+    plt.xticks(tick_marks, class_name, rotation=0)
+    plt.yticks(tick_marks, class_name)
 
-- 의사결정나무를 이용한 이상탐지 수행방법
-- 이상치 기준을 모델로 생성하는 방법
-"""
+    if normalize:  # normalize = False
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):  # 곱집합 생
+        plt.text(j, i, cm[i, j],
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
 
-# 시간을 기준으로 나누어주어 과거의 데이터를 통해 미래의 데이터를 유추할 수 있도록 한다.
-# row selection(filtering) 사용
-print(f'Time\'s max : {max(creditcard.Time)}')  # 172792.0
-print(f'Time\'s len : {len(creditcard.Time)}')  # 284807  -> 시간이 순서대로 정렬되어 있으므로, 200000 을 기준으로 train/test set 생성
-df_train = creditcard[len(creditcard.Time) <= 200000]  # train_df
-df_train = creditcard
-df_test = creditcard[len(creditcard.Time) > 200000]  # test_df
-print(f'df_train.head : \n {df_train.head()}')
-print(f'df_test.head : \n {df_test.head()}')
+
+if __name__ == '__main__':
+    # bring the data!
+    creditcard = pd.read_csv('creditcard_fds.csv')
+
+    """
+    what is Isolation Forest?
+    
+    - The IsolationForest ‘isolates’ observations by randomly selecting a feature 
+    and then randomly selecting a split value between the maximum and minimum values of the selected feature.
+    
+    - 의사결정나무를 이용한 이상탐지 수행방법
+    - 이상치 기준을 모델로 생성하는 방법
+    """
+
+    # 정규화 - data scaling
+    # dataset -> time, class 뺀 정규화용 DataFrame 만들기
+    print(creditcard.columns)
+    creditcard_scaling = creditcard.iloc[:, 1:30]  # V1~V28, Amount 까지의 creditcard set 만듬
+    print(creditcard_scaling.columns)
+
+    # MinMaxScaler
+    scaler = MinMaxScaler()
+    creditcard_scaling = scaler.fit_transform(creditcard_scaling)
+    print('표준화된 creditcard : ', creditcard_scaling)  # array 형태
+    creditcard_scaling = DataFrame(creditcard_scaling)
+    print('표준화된 creditcard - df 형태: \n', creditcard_scaling)  # df 형태
+    creditcard_scaling.columns = ['V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9', 'V10', 'V11',
+                                  'V12', 'V13', 'V14', 'V15', 'V16', 'V17', 'V18', 'V19', 'V20', 'V21',
+                                  'V22', 'V23', 'V24', 'V25', 'V26', 'V27', 'V28', 'Amount']
+    print('표준화된 creditcard - df & column name : \n', creditcard_scaling)  # df 형태가 + column name
+    print('표준화 creditcard된 컬럼들의 기술 통계량 : \n', creditcard_scaling.describe())  # min 0, max 1
+
+    # creditcard scaling + Time + Class
+    time_column = creditcard['Time']
+    class_column = creditcard['Class']
+    creditcard_scaling['Time'] = time_column
+    creditcard_scaling['Class'] = class_column
+    print('표준화된 creditcard + time + class : \n', creditcard_scaling)  # time, class 마지막에 배열되었다.
+
+
+    # train data / test data slicing
+    # 1. 시간을 기준으로 나누어주어 과거의 데이터를 통해 미래의 데이터를 유추할 수 있도록 함.
+    print('Time\'s max :', max(creditcard_scaling.Time))  # 172792.0 (열의 갯수와 max 가 다르므로 중복값이 있음을 알 수 있다.)
+    print('Time\'s len :', len(creditcard_scaling.Time))  # 284807 (열의 갯수)
+    print('Time flow : \n', creditcard_scaling.Time[:10])  # 시간의 순서대로 흐르지만, 중복이 있음을 알 수 있다.
+    df_train = creditcard_scaling.iloc[:200000]
+    print('df_train shape : ', df_train.shape)  # (200000, 31)
+    df_test = creditcard_scaling.iloc[200000:]
+    print('df_test shape : ', df_test.shape)  # (84807, 31)
+
+    # 2. undersampling
+    # df_train - X_train, y_train / df_test - X_test, y_test
+    X_train = df_train.drop(['Class'], axis=1)
+    y_train = df_train['Class']
+    X_test = df_test.drop(['Class'], axis=1)
+    y_test = df_test['Class']
+    # RandomUnderSampler 를 통해 train data 만 undersampling 을 수행
+    sampler = RandomUnderSampler(random_state=0)
+    X_train, y_train = sampler.fit_sample(X_train, y_train)
+    print('Class after Undersampling : \n', Counter(y_train))  # Counter({0: 385, 1: 385}) 5:5 비율
+    sampler = RandomUnderSampler(random_state=0)
+    X_test, y_test = sampler.fit_sample(X_test, y_test)
+
+    # 3. Isolation Forest 적용
+    # 파라미터 : n_estimators - 노드 수, contamination - 이상치 비율
+    # (https://scikit-learn.org/stable/auto_examples/ensemble/plot_isolation_forest.html 참고)
+    clf = IsolationForest(n_estimators=100, random_state=42)
+    clf.fit(X_train)
+    predict_outlier = clf.predict(X_train)
+    predict_outlier = pd.DataFrame(predict_outlier).replace({1:0, -1:1})
+    # cf. -1 : 이상치, 1이 정상치로 분류되어 1이 이상치, 0이 정상치인 것으로 다시 바꿔주었다.
+
+    # 4. 예측 결과 분석
+    # recall : 실제 부정거래를 부정거래로 예측하는 비율
+    print('Accuracy : \n', accuracy_score(predict_outlier, y_train))
+    print('Confusion Matrix : \n', confusion_matrix(predict_outlier, y_train))
+    print('Classification Report : \n', classification_report(predict_outlier, y_train))
+
+    # confusion matrix plot 함수 적용
+    class_name = [0, 1]
+    print('Confusion Matrix : \n', confusion_matrix_myplot(class_name, predict_outlier, y_test))
