@@ -4,14 +4,21 @@ R fds project in python
 - Autoencoder
 """
 from collections import Counter
+import numpy as np
 import pandas as pd
 from pandas import DataFrame
 from sklearn.preprocessing import MinMaxScaler
 from imblearn.under_sampling import RandomUnderSampler
 from functools import partial
-from keras.layers import Input, Dense
-from keras.models import Model
+import tensorflow as tf
 
+# Mini_batch
+def suffle_batch(features, labels, batch_size):
+    rnd_idx = np.random.permutation(len(features))
+    n_batches = len(features) // batch_size
+    for batch_idx in np.array_split(rnd_idx, n_batches):
+        batch_x, batch_y = features[batch_idx], labels[batch_idx]
+        yield batch_x, batch_y  # generator object 생성 -> yield 에서 값을 발생시킨다.(generate)
 
 
 if __name__ == '__main__':
@@ -93,8 +100,9 @@ if __name__ == '__main__':
 
     # 3. autoencoder 적용
     """
-    R - autoencoder 와 같은 구조로 적용
-    
+    R - autoencoder 와 같은 구조로 적용 
+    R - karas 패키지의 stacked autoencoder 를 사용했다.
+    Python - tf.keras 의 stacked autoencoder 를 사용하려 한다. (옵션은 최대한 R 의 autoencoder 를 따름)
     [ R code ]
     model %>% 
       layer_dense(units = 15, activation = "tanh", input_shape = ncol(x_train)) %>% 
@@ -106,7 +114,7 @@ if __name__ == '__main__':
     - 활성화 함수 : hyperbolic tan(x)
     """
     # layer params
-    n_inputs = X_train.shape[0]
+    n_inputs = X_train.shape[0] * X_train.shape[1]
     n_hidden1 = 15
     n_hidden2 = 10
     n_hidden3 = 15
@@ -114,21 +122,49 @@ if __name__ == '__main__':
 
     # train params
     """
-    
+    train parameter - learning rate / l2_reg 는 임의지정 
     """
-    learning_rate = 0.01  # .. R 파일에는 없는 듯. 임의 지정
-    l2_reg = 0.0001  # .. R 파일에는 없는 듯. 임의 지정
+    learning_rate = 0.001  # 임의 지정
+    l2_reg = 0.0001  # 임의 지정
     n_epochs = 100
     batch_size = 32
     n_batches = len(X_train) // batch_size
 
     # set the layers using partial
-    
+    he_init = tf.keras.initializers.he_normal()  # He 초기화 한 initializer
+    l2_regularizer = tf.contrib.layers.l2_regularizer(scale=l2_reg)  # L2 규제 : overfitting 억제
+    dense_layer = partial(tf.layers.dense, activation=tf.nn.tanh, kernel_regularizer=l2_regularizer)
+    # tf.nn.tanh 를 사용하였다. (R - tanh 함수 사용하였으므로)
+    # 성능 개선에서는 tf.nn.elu 사용 예정 - ReLU 의 특성 공유, gradient 가 죽지 않는다는 장점 가짐
+    inputs = tf.placeholder(tf.float32, shape=[None, n_inputs])
+
     # stacked autoencoder
-    # loss
+    hidden1 = dense_layer(inputs, n_hidden1)
+    hidden2 = dense_layer(hidden1, n_hidden2)
+    hidden3 = dense_layer(hidden2, n_hidden3)
+    outputs = dense_layer(hidden3, n_outputs, activation=None)
+
+    # loss 질문하기
+    reconstruction_loss = tf.reduce_mean(tf.square(outputs - inputs))  # MSE 인가 ?
+    reg_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)  # 이해 안됨.. reg_loss ?
+    loss = tf.add_n([reconstruction_loss] + reg_losses)  # add_n : element 끼리 더함
+
     # optimizer
-    # saver //
+    train_op = tf.train.AdamOptimizer(learning_rate).minimize(loss)  # R 과 같은 AdamOptimizer 사용
+
+    # saver
+    saver = tf.train.Saver(max_to_keep=1)  # saver 에 1개의 model 만을 저장한다.
     """
     다음 목표 : 
     https://github.com/NVIDIA/DeepRecommender - autoencoder 를 이용한 검색 엔진도 구현해보자
     """
+
+
+
+
+
+
+
+
+
+
