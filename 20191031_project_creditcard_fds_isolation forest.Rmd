@@ -1,0 +1,216 @@
+---
+output:
+  html_document:
+    theme: spacelab
+  pdf_document: default
+---
+---
+title: "fds_creditcard"
+subtitle: "20191031_project_creditcard_fds_isolation forest"
+author: "정경진"
+date: "`r format(Sys.Date())`"
+output: 
+  html_document: 
+    number_sections: yes
+    theme: spacelab
+    toc: yes
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## step 3. 데이터 modeling
+
+<수정된 결론>   
+
+1. 데이터 수준에서의 접근   
+   unsampling + random forest
+   under sampling + random forest
+   smote sampling + random forest
+
+2. 알고리즘 수준에서의 접근  
+   Deep learning - Autoencoder
+   isoltation forest              
+   
+   을 수행한다.
+
+두 가지의 접근방식을 비교하여 하나의 모델 및 resampling 방식을 채택한다.   
+
+
+## Isolation Forest 1. solitude::isolationForest
+
+https://github.com/talegari/solitude(패키지 홈페이지) 설명 참고
+
+#### data 불러오기
+
+```{r}
+creditcard <- read.csv(file = "../mlwr/creditcard_fds.csv", stringsAsFactors = F)
+```
+
+#### data df_train / df_test 분할
+
+```{r}
+# df_train / df_test data 나누기
+library(rlang)
+library(dplyr)
+
+# 시간을 기준으로 나누어 주었다. (미래의 데이터를 예측하기 위함)
+df_train <- creditcard %>% filter(row_number(Time) <= 200000) %>% select(-Time)
+df_test <- creditcard %>% filter(row_number(Time) > 200000) %>% select(-Time)
+str(df_train) # 200000 obs. of  30 variables:
+str(df_test) 	# 84807 obs. of  30 variables:
+```
+
+#### df_train / df_test 정규화
+
+```{r}
+# 기술통계량(descriptive statistics) 함수 for every variable in the dataset.
+# 기술통계량을 전체 데이터에서 구해주는 함수 생성
+get_desc <- function(x) {
+    map(x, ~list(
+    min = min(.x),
+    max = max(.x),
+    mean = mean(.x),
+    sd = sd(.x)))
+}
+
+
+# 정규화 함수
+# : 전체 dataset에서 min-max normalized version된 최대-최소 정규화를 해준다.
+library(purrr)
+normalization_minmax <- function(x, desc) {
+  map2_dfc(x, desc, ~(.x - .y$min)/(.y$max - .y$min))
+}
+
+
+# 정규화
+library(dplyr)
+desc <- df_train %>% 
+  select(-Class) %>% 
+  get_desc() #전체 dataset의 기술통계량을 구해주는 함수를 생성하여 정규화 함수의 파라미터로 주었다.
+
+
+x_train <- df_train %>% 
+  select(-Class) %>% 
+  normalization_minmax(desc) #df
+
+x_test <- df_test %>% 
+  select(-Class) %>% 
+  normalization_minmax(desc) #df
+
+y_train <- df_train$class #label(답지 역할)
+y_test <- df_test$Class #label(답지 역할)
+
+```
+
+#### 모델 학습 : solitude::isolationForest 적용
+
+(https://donghwa-kim.github.io/iforest.html 참고)
+
+```{r}
+# package solitude를 설치 
+# install.packages("solitude")
+library(solitude)
+
+# data head check
+head(x_train)
+table(x_train$Class)
+```
+#### **under sampling**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+library(ROSE)
+
+# under sampling
+x_train$Class <- df_train$Class
+temp <- ovun.sample(Class~., data = x_train, method = "under", N = 1152, seed = 1023)
+str(temp) #list형태로 under sampling 되었다.
+x_under <- temp$data #data로 바꿔준다.
+head(x_under)
+#seed 설정 이유 : random으로 under sampling data이 만들어질때 포함되는 데이터가 달라지기 때문에 (seed에 따라 정확도가 달라질 수 있다.)
+#원래는 seed 를 바꿔가면서 모형을 적합해야 하지만, 본 프로젝트의 목표는 적합한 알고리즘을 선정하는 것이므로, seed가 정해진 상황에서 
+# 알고리즘을 비교하기로 하였다. (김한용, 이우주, 불균형적인 이항 자료 분석을 위한 샘플링 알고리즘들의 성능비교 및 주의점, The Korean Journal of Applied Statistics (2017))
+
+##Under sampling은 train set의 갯수만 맞추어준다. 
+table(x_under$Class) #0과 1의 비율을 2:1로 맞추어 주었다.
+y_under <- x_under$Class
+x_under$Class <- NULL
+
+x_train <- x_train %>% select(-Class)
+str(x_under)
+str(x_train) # 다시 class빼주었다.
+```
+
+```{r}
+# isolation new 생성 + fit
+set.seed(1031)
+iso <- isolationForest$new()
+iso$fit(x_under)
+```
+
+```{r}
+# outlier 예측
+pred_outlier <- iso$predict(x_under)
+
+# anomaly score의 평균을 출력
+quantile(pred_outlier$anomaly_score, probs = seq(0.1, 1, length.out = 11))
+
+# 
+rangechange <- function(x) {
+  print(-x)
+}
+
+ as.data.frame(pred_outlier)
+```
+
+```{r}
+# anomaly score가 가장 낮은 순으로 20개
+round(head(sort(pred_outlier$anomaly_score, dec = FALSE), 20), 2)
+```
+
+#### Isolation Forest 2. IsolationForest::IsolationForest
+
+
+(https://analyzecore.com/2018/06/13/anomaly-detection-for-business-metrics-with-r/ 설명 참고)
+(https://r-forge.r-project.org/R/?group_id=479 패키지 설명 참고)
+
+```{r}
+# package설치 
+#install.packages("IsolationForest", repos="http://R-Forge.R-project.org")
+library(IsolationForest)
+```
+
+#### 모델 학습 : IsolationForest::isolationForest 적용
+
+```{r}
+# isolation Forest training
+set.seed(1031)
+fraud_tree <- IsolationTrees(x_under)
+str(fraud_tree)
+# 설명
+# ntree : 트리 갯수, 10개(Basic model option)의 트리를 만들었다. 
+# hlim (heightlimit) : 트리의 높이, 10
+
+# evaluating anomaly score
+
+
+```
+
+```{r}
+# visualization
+plot(density(x_under$anomalyscore))
+# algorithm 1과 비교했을 때, anomalyscore의 분포가 왼쪽으로 이동한 것을 알 수 있다.
+```
+
+#### 모델 평가
+
+```{r}
+AnomalyScore()
+
+```
+
+```{r}
+save.image(file = "isolationForest.RData")
+```
+

@@ -1,0 +1,351 @@
+---
+output:
+  html_document:
+    theme: spacelab
+  pdf_document: default
+---
+---
+title: "fds_creditcard"
+subtitle: "20191025_project_creditcard_fds_markdown_autoencoder"
+author: "정경진"
+date: "`r format(Sys.Date())`"
+output: 
+  html_document: 
+    number_sections: yes
+    theme: spacelab
+    toc: yes
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+creditcard <- read.csv(file = "../mlwr/creditcard_fds.csv", stringsAsFactors = F)
+```
+<수정된 결론>     
+
+1. 데이터 수준에서의 접근   
+   unsampling + random forest  
+   under sampling + random forest  
+   smote sampling + random forest  
+
+2. 알고리즘 수준에서의 접근    
+   Deep learning - Autoencoder  
+   isoltation forest                
+   
+   을 수행한다.  
+
+두 가지의 접근방식을 비교하여 하나의 모델 및 resampling 방식을 채택한다.  
+
+
+## 알고리즘 수준에서의 접근 Autoencoder  
+
+```{r include=FALSE}
+
+# autoencoder (https://blogs.rstudio.com/tensorflow/posts/2018-01-24-keras-fraud-autoencoder/ 참고하여 작성)
+
+# autoencoder를 r에서 사용하려면, r에서 TensorFlow / keras 를 설치해야 한다.
+#devtools::install_github("rstudio/tensorflow", force = TRUE)
+#devtools::install_github("rstudio/keras", force = TRUE)
+#tensorflow::install_tensorflow(version = "1.14")
+
+library(devtools)
+library(tensorflow)
+library(keras)
+library(purrr)
+library(dplyr)
+search()
+```
+
+## df_train / df_test 정규화  
+
+```{r}
+
+# 기술통계량(descriptive statistics) 함수 for every variable in the dataset.
+# 기술통계량을 데이터에서 구해주는 함수 생성
+get_desc <- function(x) {
+    map(x, ~list(
+    min = min(.x),
+    max = max(.x),
+    mean = mean(.x),
+    sd = sd(.x)))
+}
+
+
+# 정규화 함수
+# : 전체 dataset에서 min-max normalized version된 최대-최소 정규화를 해준다.
+normalization_minmax <- function(x, desc) {
+  map2_dfc(x, desc, ~(.x - .y$min)/(.y$max - .y$min))
+}
+
+
+# 정규화
+desc <- df_train %>% 
+  select(-Class) %>% 
+  get_desc() #전체 dataset의 기술통계량을 구해주는 함수를 생성하여 정규화 함수의 파라미터로 주었다.
+
+
+x_train <- df_train %>% 
+  select(-Class) %>% 
+  normalization_minmax(desc) %>% 
+  as.matrix() #keras format : matrix이므로 matrix로 바꾸어준다.(문제지 역할)
+
+x_test <- df_test %>% 
+  select(-Class) %>% 
+  normalization_minmax(desc) %>% 
+  as.matrix() #keras format : matrix이므로 matrix로 바꾸어준다.(문제지 역할)
+
+y_train <- df_train$Class #label(답지 역할)
+y_test <- df_test$Class #label(답지 역할)
+```
+
+## 모델 적용
+
+```{r}
+
+# autoencoder model 구성.(순차모델: sequential model: 선형 나열)
+model <- keras_model_sequential()
+
+# 모델의 layer 정의 : a symmetric autoencoder with 4 dense layers.
+
+# 다중 퍼셉트론 레이어를 만든다. (모든 뉴런들이 서로 결합 : 전결합(fully-connected) / Affine / Dense 계층)
+model %>% 
+  layer_dense(units = 15, activation = "tanh", input_shape = ncol(x_train)) %>% 
+  layer_dense(units = 10, activation = "tanh") %>% 
+  layer_dense(units = 15, activation = "tanh") %>% 
+  layer_dense(units = ncol(x_train))
+
+# 4개의 layer를 입력층에는 x_train의 갯수만큼, 1층, 2층, 3층 순으로 뉴런 갯수를 정하여 나비모양(출력층 : x_train의 갯수)으로 만든다.
+
+# option 설명
+# layer_dense() : 2D layer 층
+# input_shape : 입력층(0층)
+# units : 뉴런의 갯수 -> 즉, 4층으로 이루어진 layer 들이 0층은 train data 갯수만큼/1층 15개 / 2층 10개 / 3층 15개 / 4층 train data 갯수만큼 되어 있다. (나비모양, 대칭모양)
+# activation : 활성화 함수 (여기서는 hyperbolic tan(x)를 넣었다 : https://wikidocs.net/24987 참고)
+
+summary(model)
+# 결과 
+# 나비모양으로 layer 를 만들었으므로
+# dense (0층 / 입력층) : 450개
+# dense_1 (1층) : 160개
+# dense_2 : 165개
+# dense_3 : 464개
+
+#매개변수(Param #)는 가중치(weight)와 편향(bias)으로 이루어짐
+# dense Param# 450 = (ncol(x_train)+1)*15
+# dense_1 Param# 160 = (15:입력층의 뉴런 수 + 1)*10 = 160
+# dense_2 Param# 165 = (10: dense_1의 뉴런 수 + 1)*15 = 165
+# dense_3 Param# 464 = (15: dense_2의 뉴런 수 + 1)*29 = 464
+```
+
+
+```{r}
+# 컴파일 : 모델을 기계가 이해할 수 있도록 컴파일
+
+model %>% compile(
+  loss = "mean_squared_error", 
+  optimizer = "adam",
+  metrics= "accuracy"
+)
+# 컴파일에서 선택할 수 있는 옵션
+# loss : 훈련과정에서 사용할 손실함수 설정 (여기서는 평균제곱오차(mean_squared_error)를 사용함)
+#        현재 신경망 성능의 '나쁨'을 나타내는 지표 (작으면 작을수록 좋다)
+# optimizer : 훈련과정을 설정하는 옵티마이저 설정(여기서는 adam : 대중적으로 많이 사용하는 옵티마이저를 사용함)
+#             손실함수의 값을 낮추기 위한 매개변수 최적화 수행
+# metrics : 훈련과정을 모니터링하기 위한 지표를 설정(여기서는 사용하지 않음)
+#           훈련 및 시험하는 동안 모델 평가항목을 정의 (여기서는 정확도(accuracy)를 사용함)
+
+```
+
+## 모델 학습
+
+ **why we input  x_train[y_train == 0,] (0인 학습데이터) only? **   
+Autoencoder의 원리는 정상적인 데이터를 학습 시킨 후, 데이터를 넣어서 오토인코더가 학습되어 있는 정상적인 패턴과 얼마나 다른가를 비교하는 것이기 때문에 학습 데이터는 이상거래를 제외하고 정상적인 거래만 넣어 학습시킨다.   
+
+(https://bcho.tistory.com/1200?category=555440 참고)
+```{r}
+
+# option for fit() 1
+# Callback Checkpoint : 체크포인트를 훈련 중간과 훈련 마지막에 자동 저장(모델 재사용 또는 훈련 과정이 중지된 경우 이어서 훈련 진행 가능, 책갈피같은 역할, 훈련 중 statistics을 볼 수있다)
+checkpoint <- callback_model_checkpoint(
+  filepath = "model.hdf5",
+  save_best_only = TRUE, 
+  save_freq = "epoch",
+  verbose = 1
+) 
+# callback_model_checkpoint process 설명
+# 매 epoch마다 학습된 가중치를 파일로 저장 -> save_best_only = TRUE로 loss함수가 가장 작을 때에만 저장
+
+# callback_model_checkpoint option 설명
+# filepath : 매 epoch마다 훈련된 모델을 저장할 경로
+# verbose : 명령이 수행되는 과정을 자세히 출력하는 모드 (0 or 1)
+# period = 1이 default라고 가정한다.(-> 버전 업데이트로 옵션 바꿈) save_freq = "epoch(학습 반복 횟수)"로 주었다. 
+
+
+# option for fit() 2
+early_stopping <- callback_early_stopping(patience = 5)
+# callback_early_stopping process 설명 : 개선이 없다고 바로 종료하지 않고 개선이 없는 epoch가 (patience =5)번째 지속될 경우 학습을 종료한다.
+
+
+# fit() 을 사용하여 모델을 학습시킨다.
+model %>% fit(
+    x = x_train[y_train == 0,],
+    y = x_train[y_train == 0,],
+    epochs = 100,
+    batch_size = 32,
+    validation_data = list(x_test[y_test == 0,], x_test[y_test == 0,]),
+    callbacks = list(checkpoint, early_stopping) # 훈련 단계에 checkpoint 전달
+    )
+# fit process 설명
+# batch_size를 mini-batch로 추출하여 epochs(100)번 학습하는 모델을 설정함
+# 신경망 학습을 위한 데이터셋 3가지(훈련데이터 / 검증데이터 / 시험 데이터 : https://tykimos.github.io/2017/03/25/Dataset_and_Fit_Talk/ 참고) 
+
+# fit option 설명
+# x = 입력 데이터 : x_train 중에서 0인것(normal transaction)
+# y = 라벨 값 : x_train 중에서 0인 것 : 똑같은 df의 정답을 라벨로 준다.
+# epochs : 학습 반복 횟수
+# batch_size : 몇개의 샘플로 가중치를 갱신할 것인지 지정함 (몇 문항을 풀고 해답을 맞추는지) - 오차역전파 알고리즘 사용하여 가중치 업데이트 (HOW? https://wikidocs.net/37406 참고)
+# validation_data : 검증 데이터로 하이퍼파라미터의 성능을 평가한다.
+# callbacks = list(checkpoint, early_stopping)의 옵션이 되면 학습을 멈춘다.
+
+```
+
+
+```{r}
+# 정답률 : final fraud rate 를 구하였다. (학습 모델 평가)
+evaluation <- evaluate(model, x = x_test[y_test == 0, ], y = x_test[y_test == 0, ])
+evaluation
+# loss : 0.0003317787
+# acc  : 0.9941204
+```
+
+## Prediction
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# model loading
+model <- load_model_hdf5("model.hdf5", compile = FALSE)
+
+
+# MSE (Mean - Squared Error) : 평균제곱오차를 구하자.(=손실함수를 구하자)
+pred_train <- predict(model, x_train)
+mse_train <- apply((x_train - pred_train)^2, 1, sum)
+
+pred_test <- predict(model, x_test)
+mse_test <- apply((x_test - pred_test)^2, 1, sum)
+
+# AUC 구하기
+auc(y_train, mse_train) # train data의 AUC : 0.9554733
+auc(y_test, mse_test) # test data의 AUC : 0.9502849
+
+# 설명
+# AUC : Area Under the ROC Curve (AUC) 
+#       FP 비율(x축)과 TP 비율(y축) 사이의 관계를 나타내는 그래프
+#      거짓긍정과 참긍정의 관계를 나타내며, 참긍정률은 민감도(=재현율)과 같으므로, AUC(ROC곡선 아래 영역)가 높을 수록 참긍정률이 높고 거짓긍정률이 낮은 점을 통과한다. (즉 사각형에 가까워진다.)
+# train data의 AUC : 0.9554733 > 0.9 : 뛰어남
+# test data의 AUC : 0.9502849 > 0.9 : 뛰어남
+
+```
+
+## prediction 상에서의 이상탐지 과정
+
+Autoencoder 안에서 가장 중요한 것은 임계치(threshold) K를 넘는 값을 찾아내는 것이다. Autoencoder에 학습한 normal data들과 다른 abnormal data들은 autoencoder 상에서 제대로 encoding/decoding이 되지 않을 것이다. 따라서 손실함수(MSE : Mean-Squared Error) 가 높을 것이므로, 우리는 어떠한 임계치 k를 넘는 데이터들을 anomaly data라고 가정하고 이러한 anomaly data를 찾아내는 과정을 거칠 것이다.   
+
+```{r}
+# anomaly detection process 
+library(Metrics)
+library(ggplot2)
+search()
+
+# 임계치(threshold) K 설정을 위한 준비
+possible_k <- seq(0, 0.5, length.out = 100) 
+
+#설명 : length.out = 열의 길이 조정하여 0~0.5 사이의 수열을 만들었다.
+
+# 정확도 그래프로 나타내기
+precision <- sapply(possible_k, function(k) {
+  predicted_class <- as.numeric(mse_test > k)
+  sum(predicted_class == 1 & y_test == 1) / sum(predicted_class)
+})
+
+#설명 : 정확도(precision)을 구하는 함수를 생성
+#       1로 예측한 클래스 중 예측한 클래스가 1이며 실제도 1인 경우의 비율을 구하였다. 
+#       임계치 k의 범위는 0~0.5까지이며, 평균제곱오차가 항상 임계치 k보다 클 때의 예측값만을 범위로 한다.  
+#       즉, 임계치 k를 넘는 데이터들을 anomaly data라고 가정하고 그 data 중에서 맞게 예측한 값의 비율(정확도)을 구한다.
+
+qplot(possible_k, precision, geom = "line") + labs(x = "Threshold", y = "Precision")
+
+```
+
+```{r}
+# 재현율 그래프로 나타내기
+recall <- sapply(possible_k, function(k) {
+  predicted_class <- as.numeric(mse_test > k)
+  sum(predicted_class == 1 & y_test == 1) / sum(y_test)
+})
+
+# 설명 : 재현율(recall)을 구하는 함수를 생성
+#        실제로 1인 test data 중에 예측한 클래스가 1이며 실제도 1인 경우의 비율을 구하였다.
+#        임계치 k를 넘는 데이터들을 anomaly data라고 가정하고 그 data 중에서 결과의 재현율이 높은지 구한다.
+qplot(possible_k, recall, geom = "line") + labs(x = "Threshold", y = "Recall")
+
+```
+
+**anomaly detection의 기준**  
+
+1. 정밀도(Precision)가 가장 높은 임계치를 설정한다.    
+2. 사기거래(fraudulent transactions)를 검사하는 금액이 $1일때, 사기거래의 금액과 비교하여 더 높은 쪽을 기각한다.     
+(ex_ 검사금액 > 사기거래 금액 -> 검사하지 않음  
+     검사금액 < 사기거래 금액 -> 검사 실시     )  
+
+
+```{r}
+# 임계치 k의 범위에 따른 사기로 인한 손해 금액(Amount)을 그래프로 그리자
+cost_per_verification <- 1
+
+lost_money <- sapply(possible_k, function(k){
+  predicted_class <- as.numeric(mse_test > k)
+  sum(cost_per_verification * predicted_class + (predicted_class == 0) * y_test * df_test$Amount)
+})
+
+
+# 설명 : 
+#        $1을 검사에 드는 비용(verification cost)로 정한 후, 
+#        임계치 k보다 큰 MSE를 가진 predicted_class에  
+#        sum(예측된 사기*검사비용 $1 + 예측되지 않은 사기(예측을 0으로 했으나 y_test가 1인 경우)*사기당한 금액) = 모델에 입각한 전체 금액
+#        lost money = sum(위 내용)이 최소인 점을 찾아야 한다.
+
+# (predicted_class == 0) : 예측이 0이라면 1로 출력 * y_test : 실제로 1일 때만 1(나머지일 때는 0) * df_test$Amount : 사기당한 금액
+qplot(possible_k, lost_money, geom = "line") + labs(x = "Threshold", y = "Lost Money")
+
+```
+```{r}
+
+# 가장 비용이 낮을때의 임계치(threshold)
+possible_k[which.min(lost_money)] # 0.06565657 # 재현율(recall)이 가장 높을 때와 일치한다!
+# 최저 비용
+min(lost_money) # 3282.62
+
+# 원래 비용
+mean(lost_money) # 12417.78
+
+# 모델에 입각해서 이상거래 탐지를 한다면 9135.16달러를 아낄 수 있습니다. 
+
+```
+```{r}
+save.image(file = "fds_autoencoder.RData")
+```
+
+```{r}
+rm(list = ls())
+load("fds_autoencoder.RData")
+```
+
+## 성능평가 
+```{r}
+# Confusion Matrix 만들기
+library(gmodels)
+CrossTable(y_test, pred_test)
+
+# Precision-Recall Curve 만들기
+
+```
+

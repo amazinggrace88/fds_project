@@ -1,0 +1,161 @@
+---
+output:
+  html_document:
+    theme: spacelab
+  pdf_document: default
+  word_document: default
+---
+---
+title: "fds_creditcard"
+subtitle: "20191021_project_creditcard_fds_markdown_data_EDA"
+author: "정경진"
+date: "`r format(Sys.Date())`"
+output: 
+  html_document: 
+    number_sections: yes
+    theme: spacelab
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+데이터는 credit card in September 2013 by european cardholders를 사용하였다.
+ 
+<Data structure>
+
+데이터의 불균형 : 신용카드 사기(the positive class - frauds) 데이터는 전체 거래량의 0.172%이다. 
+PCA transformation : 데이터는 numerical variable이며, 차원축소를 한 데이터이다.
+
+PCA transformation을 하지 않은 두 개의 data는 'Time' and 'Amount'이다.
+'Time' : transaction 간 걸리는 시간 (초단위)
+'Amount' : transaction amount, 즉 거래량. example-dependant cost-senstive learning에 쓰일 수 있다.  
+'Class' : fraud(사기) = 1, 정상 = 0으로 분류되는 class. dataset 상 정답을 뜻한다. 
+
+
+## step 1. 데이터 불러오기
+
+```{r}
+creditcard <- read.csv(file = "../mlwr/creditcard_fds.csv", stringsAsFactors = F)
+str(creditcard)
+```
+해석 : Data structure - V1~V28, Amount, Class가 있는 것을 확인할 수 있다.
+
+```{r}
+# 데이터 random 배열 및 범위 확인
+head(creditcard)
+```
+ 해석 : data가 랜덤으로 배열되어 있는 것을 알 수 있다.
+ 
+
+## step 2. 데이터 EDA
+```{r echo=TRUE}
+# NA 및 이상치 있는지 알아보기
+table(is.na(creditcard))
+
+# Amount범위 / outlier 
+summary(creditcard$Amount)
+boxplot(creditcard$Amount)
+```
+해석 : creditcard에 NA값은 없으며, Amount의 boxplot은 매우 편향되어 있음을 알 수 있다. (mean: 88.35, Max : 25691.16) -> 그래프를 그려볼 필요가 있음.
+
+```{r}
+# Time 범위 / outlier
+summary(creditcard$Time)
+boxplot(creditcard$Time)
+```
+해석 : Time의 boxplot은 정규분포를 이루고 있다. (min : 0, mean : 94814, max : 172792로 대략 0~180000 사이의 범위를 가진다)
+
+```{r}
+summary(creditcard)
+```
+
+해석 : V1 ~ V28 까지의 범위는 모두 다르므로 정규화가 필요한 것을 알 수 있다.
+
+
+## step 2. 데이터 EDA
+
+```{r}
+#ggplot2 설치 /dplyr 설치
+library(ggplot2)
+library(dplyr)
+library(plotly)
+
+
+# Time에 따른 transaction 변화량
+ct <- ggplot(data = creditcard, aes(x = Time)) +
+  geom_histogram(fill = "#009E73", color ="#e9ecef", binwidth = 5000) +
+  xlab("Time by seconds") + 
+  ylab("Credit Card Transaction")
+ggplotly(ct)
+
+# Time 에 따른 frauds 변화량
+credit1 <- creditcard %>% filter(Class == 1)
+ct1 <- ggplot(data = credit1, aes(x = Time)) +
+       geom_histogram(fill = "#69b3a2", color = "#e9ecef", binwidth = 5000) +
+       xlab("Time by seconds") +
+       ylab("frauds transaction amounts")
+ggplotly(ct1)
+
+# Time 에 따른 정상거래 변화량
+credit0 <- creditcard %>% filter(Class == 0)
+ct0  <-ggplot(data = credit0, aes(x = Time)) +
+       geom_histogram(fill = "#404080", color = "#e9ecef", binwidth = 5000) +
+       xlab("Time by seconds") +
+       ylab("normal transaction amounts")
+ggplotly(ct0)
+```
+해석 : 사기 거래량은 시간에 따른 변화가 일정하지 않지만, 정상거래 거래량은 시간에 따라 일정하게 변화하는 양상을 가진다. 
+
+```{r message=FALSE, warning=FALSE}
+# Amount에 따른 transaction 변화량
+ca <- ggplot(data = creditcard, aes(x = Amount)) +
+  geom_histogram(fill = "#009E73", color ="#e9ecef", binwidth = 10) +
+  xlab("Amounts") +
+  ylab("Credit Card Transaction") +
+  xlim(0, 500)
+ggplotly(ca)
+
+# Amount에 따른 frauds 변화량
+ca1 <- ggplot(data = credit1, aes(x = Amount)) +
+        geom_histogram(fill = "#69b3a2", color = "#e9ecef", binwidth = 10) +
+        xlab("Amounts") +
+        ylab("Credit Card Transaction") +
+        xlim(0, 500)
+ggplotly(ca1)
+
+# Amount에 따른 정상거래 변화량
+ca0 <- ggplot(data = credit0, aes(x = Amount)) +
+        geom_histogram(fill = "#404080", color = "#e9ecef",binwidth = 10) +
+        xlab("Amounts") +
+        ylab("Credit Card Transaction") +
+        xlim(0, 500)
+ggplotly(ca0)
+```
+해석 : 주로 amount가 소량일때 신용사기가 발생하며, 정상 거래량 또한 amount에 따라 감소하는 양상을 띈다. 
+
+```{r message=TRUE, warning=FALSE}
+# V1~V28과 Class와의 상관관계 밝히기
+## Class numeric data로 바꾸어주기
+
+creditcard$Class <- as.factor(creditcard$Class)
+str(creditcard)
+## for 문으로 28개 V 의 1과 0의 분포 만들기  
+library(hrbrthemes)
+
+for(i in c(2:29)) {
+    print(ggplot(data = creditcard,
+                 mapping = aes_string(x = colnames(creditcard)[i], group = "Class", fill = as.factor("Class"))) +
+          geom_density(color="#e9ecef", alpha=0.6) +
+          xlim(-20, 10) +
+          theme_ipsum() +
+          facet_wrap( ~ Class))
+  }
+
+```
+ 해석 : 신용카드 사기거래(Class 0)과 정상거래(Class 1)의 밀도가 상이한 경우 : V1 / V3 / V4 / V7 / V10 / V12 / V14 / V16 / V17 등이 있다.
+ 
+

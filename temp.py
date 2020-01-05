@@ -5,8 +5,23 @@ from sklearn import svm, datasets
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import plot_confusion_matrix
 import itertools
-letters = ['a', 'b', 'c', 'd', 'e', 'f']
-booleans = [1, 0, 1, 0, 0, 1]
-decimals = [0.1, 0.7, 0.4, 0.4, 0.5]
 
-print(list(itertools.chain(letters, booleans, decimals)))  # itertools - list, tuples, iterables 를 연결하는 것
+iterable1 = 'ABCD'
+iterable2 = 'xy'
+iterable3 = '1234'
+
+for i in iterable1:
+    for j in iterable2:
+        for k in iterable3:
+            print(i+j+k)
+
+print()
+
+iterable1 = 'ABCD'
+iterable2 = 'xy'
+iterable3 = '1234'
+
+dot = itertools.product(iterable1, iterable2, iterable3)
+print(dot)  # itertools.product object
+print(list(dot))  # list 로 만들어서 리턴할 수 있다.
+

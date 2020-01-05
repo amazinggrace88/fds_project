@@ -1,0 +1,299 @@
+---
+output:
+  html_document:
+    theme: spacelab
+  pdf_document: default
+---
+---
+title: "fds_creditcard"
+subtitle: "20191023_project_creditcard_fds_markdown_sampling"
+author: "정경진"
+date: "`r format(Sys.Date())`"
+output: 
+  html_document: 
+    number_sections: yes
+    theme: spacelab
+    toc: yes
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+creditcard <- read.csv(file = "../mlwr/creditcard_fds.csv", stringsAsFactors = F)
+```
+
+## 데이터의 문제점 1 : 데이터 불균형
+
+: 데이터의 불균형은 모델 성능을 정확히 측정하지 못하게 한다. 기존에 배웠던 Decision Tree / Logistic Regression과 
+같은 표준 알고리즘은 소수계층의 특징을 잡음으로 간주하여 종종 무시한다. 따라서 소수집단(현재 dataset- fraud class)의 오분류 가능성이 높다.  
+
+
+ <해결책>  
+ 
+1. 데이터 레벨에서의 접근 : **Resampling Techniques**
+: training data에서의 균형을 맞춰준다. 소수 클래스의 수를 늘리거나 대다수 클래스의 비중을 줄이는 것이 좋다. 가장 일반화되어있는 과정이므로 본 프로젝트에서 다루기로 하자.
+
+2. 성능 지표에서의 접근 : **Changing the performance metric**
+: confusion nmatrix / F1score / Kappa statistics / ROC curves 등의 성능 지표 중 데이터의 불균형 문제를 최소화하는 성능지표를 사용한다. 
+(https://www.kaggle.com/joparga3/in-depth-skewed-data-classif-93-recall-acc-now 참조) 
+
+현 프로젝트에서는 PCA 분석을 사용하여 데이터를 차원 축소시켰기 때문에 confusion matrix로 성능을 측정하는 것은 의미가 없다고 말하고 있다. 대신 the Area Under the Precision-Recall Curve (AUPRC)을 사용하는 것을 권장하고 있다. 권장하는 성능지표가 있기 때문에, 성능 지표에서의 접근은 생략한다. 
+
+3. 알고리즘에서의 접근
+: 소수계급(현재 dataset에서는 1(fraud))과 관련한 학습을 강화하도록 분류 알고리즘을 수정하는 방법이다. 데이터가 불균형한 상황에서의 주 관심사항은 소수계급을 잘 분류하는 것이므로, 소수 계급을 다수계급으로 잘못 분류했을 때의 비용을 다수계급을 소수계급으로 잘못 분류했을 때보다 크게 부여한다. 알고리즘 수준의 접근 방법 내에서도, One-class learning, Cost-sensitive learning, Improved algorithm 등으로 나뉜다. 
+(문선영(고려대학교 대학원 의학통계학 협동과정), 불균형 자료에서 랜덤 포레스트에 기반한 분류 방법의 성능 비교,2018.2 참고)     
+
+
+
+
+1. **Resampling Techniques**의 종류  
+
+  1-1) **Random Under Sampling** - **금융사기 fds에서 많이 사용되는 Resampling method**
+  무작위로 다수 클래스(현재 dataset - normal class)를 제거하여 클래스 분포의 균형을 맞추는 것.
+  
+  장점 : training set의 sample 수 줄임으로서 저장문제/실행속도 문제를 개선할 수 있다.
+  단점 : 분류기를 만들 때 중요한 정보를 누락할 수 있다. 정확한 대표성을 가지지 못하여 부정확한 결과가 나올 수 있다.
+  
+  ex)
+  정상의 10% 샘플링 = 980*10% = 98
+  전체 개수 20+98 = 118
+  사기성 관찰의 비율 = 10/118 = 17%
+
+  1-2) **Random Over Sampling** 
+  소수 클래스의 높은 대표성을 위해 소수 클래스의 인스턴수 수를 복사한다.(단순 복사)
+  
+  장점 : 정보의 손실이 없고, Random Under Sampling 보다 성능이 좋다.
+  단점 : 소수 클래스를 복사하기 때문에 과적합의 가능성이 있다.
+  
+  ex)
+  사기성 관찰을 20배한다 = 20 *20=400
+  정상 개수 = 980
+  전체 데이터 = 1380
+  사기성 관찰의 비율 = 400/1380 = 29%
+  
+  1-3) **Cluster-Based Over Sampling**
+  K-means clustering (K-평균 군집화) 알고리즘이 독립적으로 소수/다수클래스 (현재 dataset - fraud/normal class)에    
+  독립적으로 적용된다. 각각의 cluster들은 over sampling되어 모든 클러스터가 동일한 수의 인스턴스를 가지며, 모든 
+  클래스는 동일한 크기를 가진다. 
+  
+  장점 :  over sampling 후, 모든 cluster들은 같은 수의 class를 가지게 된다. 다수 인스턴스의 클러스터 갯수와 소수 
+  인스턴스 클러스터 숫자가 같지 않다. (어느 한쪽만 데이터를 복사하거나 삭제하지 않고 비율을 맞추어서 over 
+  sampling)해준다. 
+  단점 : over sampling이 대부분 그렇듯 과적합의 가능성이 있다.
+  
+  ex)
+  다수 인스턴스의 클러스터
+  
+  클러스터1 : 150개
+  클러스터2 : 120
+  클러스터3 : 230
+  클러스터4 : 200
+  클러스터5 : 150
+  클러스터6 : 130
+  
+  소수 인스턴스 클러스터
+  클러스터1 : 8
+  클러스터2 : 12
+  
+  각 클러스터를 오버샘플 한 이후, 같은 클래스를 가지고 있는 모든 클러스터는 같은수의 관찰자를 가지고 있다
+  
+  다수 인스턴스의 클러스터
+  클러스터1 : 170
+  클러스터2 : 170
+  클러스터3 : 170
+  클러스터4 : 170
+  클러스터5 : 170
+  클러스터6 : 170
+  
+  소수 인스턴스 클러스터
+  클러스터1 : 250
+  클러스터2 : 250
+  
+  오버 샘플링을 근거로 한 비율 = 500/(1020+500) = 33%
+
+ 
+  1-4) **Informed Over Sampling: Synthetic Minority Over-sampling Technique (SMOTE)**
+  소수 클래스(현재 dataset - fraud class)의 복제본이 dataset에 더해지면 발생되는 데이터 과적합을 피하기 위한 
+  기술이다. 소수 클래스의 sampling을 하고 sample을 몇배 증가시켜 유사 합성 인스턴스를 만든다. 그 후 유사 합성 
+  인스턴스(해석상 소수 클래스와 비슷하지만 크기가 몇배 더 커진 인스턴스)를 다수 클래스에 추가한다.
+  
+  장점 : 유용한 데이터를 놓칠 염려가 없다. over sampling의 문제점인 과적합을 조금은 줄일 수 있다.
+  단점 : 새로운 유사 합성 인스턴스를 생성하면 근접하는 예제가 생길 수 있다. 그러므로 클래스의 겹침(overlapping of 
+  class)/추가적 노이즈가 발생할 수 있다. 또한, 고차원의 데이터에서는 효과적이지 않을 수 있다.
+  
+  ex)
+  전체 관측자 = 1000
+  사기성 관찰 = 20
+  비사기성 관찰 = 980
+  Event Rate = 2%
+  
+  소수 클래스로부터 15개의 샘플을 추출하고 20배를 함으로써 유사 합성 인스턴스를 생성한다.
+  다음과 같은 데이터 셋이 생성된다
+  
+  소수 클래스 (사기성 관찰) = 300
+  다수 클래스 (비사기성 관찰) = 980
+  Event Rate = 300/1280 = 23.4%
+  
+  1-5) **Modified synthetic minority oversampling technique (MSMOTE)** : python에서만 쓰이는 것으로 조사됨. SMOTE의 단점을 보완
+  
+cf. 표본화 기법들의 성능 비교해본 결과 이러한 지능적인 기법들을 사용한 SMOTE/BSM 등 보다 오히려 단순복제를 사용한 과표본화 기법이 더 좋은 분류 성능을 내는 경우가 많다는 연구결과도 있다.
+(J. V. Hulse, T. M. Khoshgoftaar, A. Napolitano,"Experimental perspectives on learning from imbalanced data," Proc. of International Conference on Machine Learning, pp. 935 942, 2007. 인용)  
+
+    
+결론 : 현재 프로젝트(creditcard fraud prediction)에서 가장 정확도가 높은 알고리즘을 다른 데이터셋(보험사기자 예측 raw 데이터)에 적용하려 하기 때문에 과적합 되지 않는 기법을 쓰기로 하였다. 따라서 sampling을 하지 않은 raw data와 과적합이 적은 Random Under Sampling / Informed Over Sampling(SMOTE) 두 가지 Random Sampling을 통해 알고리즘을 각각 구현해보기로 한다. 
+그 후 총 3가지 dataset의 성능을 비교해보고, 가장 정확성이 높은 dataset + algorithm을 보험사기자 예측 raw 데이터에 적용시키기로 한다.
+
+(https://www.analyticsvidhya.com/blog/2017/03/imbalanced-classification-problem/ 참고)
+(https://sherry-data.tistory.com/22 해석본 참고)  
+
+  
+#### **데이터를 나눌 시 주의점**  
+
+- 대표성 : 훈련 데이터셋과 테스트 데이터셋은 전체 데이터에 대한 대표성을 띄고 있어야 한다. (sampling을 통해 0, 1 비율 맞춤)
+
+- 시간의 방향 : 과거 데이터로부터 미래 데이터를 예측하고자 할 경우에는 데이터를 섞어서는 안 된다. 이런 문제는 훈련 데이터셋에 있는 데이터보다 테스트 데이터셋의 모든 데이터가 미래의 것이어야 한다. (train/test data에서 미래의 데이터를 예측하기 위해서 시간별로 나눠준다)
+
+- 데이터 중복 : 각 훈련, 검증, 테스트 데이터셋에는 데이터 포인트의 중복이 있어서는 안 된다. 데이터가 중복되면 올바른 평가를 할 수 없기 때문이다. (kaggle 데이터 )
+(https://wdprogrammer.tistory.com/29 - 케라스 창시자에게 배우는 딥러닝 인용문 참고)
+  
+```{r}
+# df_train / df_test data 나누기
+library(rlang)
+library(dplyr)
+df_train <- creditcard %>% filter(row_number(Time) <= 200000) %>% select(-Time)
+df_test <- creditcard %>% filter(row_number(Time) > 200000) %>% select(-Time)
+str(df_train) # 200000 obs. of  30 variables:
+str(df_test) 	# 84807 obs. of  30 variables:
+```
+
+#### **SMOTE sampling의 문제**  
+
+SMOTE sampling에 경우 가장 중요한 부분은 sampling 진행 전에 정규화를 진행해야 한다는 것이다. 관측치들 간에 거리를 이용하여 새로운 표본을 생성하는 과정이기에 정규화를 하지 않을 경우 단위가 다른 한 변수에 의해 결과가 편향될 수 있다. 따라서 정규화 후 SMOTE sampling을 진행하도록 하자.
+
+또한 SMOTE Sampling은 K-fold Cross-Validation(교차검증)을 할 때 train dataset에만 적용해주어야 한다. 교차 검증을 통해 얻어진 train data/test data를 통해 예측하고 나서 모델의 성능을 매번 계산해 주어야 한다. 따라서 정규화 후 교차검증 하는 과정 안에  SMOTE Sampling을 train dataset에만 적용하도록 한다.  
+
+
+## **데이터의 문제점 2 : 데이터 정규화 필요**  
+
+#### 데이터 범위 조정
+1) **z - score 표준화**
+
+: 범위를 표준정규확률분포로 변환한다. ((X - X의 평균값) / (X의 표준편차))
+매우 극단적인 이상치가 나타날 수 있다고 의심하는 경우, 또는 거리 계산에서 이상치에 좀 더 큰 가중치를 두는 것이 합리적이라고 생각된다면 Z-score를 사용한다. 
+
+2) **최대 최소 정규화** 
+
+: 사전에 정의된 최솟값과 최댓값 사이의 범위를 분모로 취하여 모든 데이터를 0~1사이로 만들어준다.((X - X의 최소값) / (X의 최대값 - X의 최소값))
+데이터의 최댓값, 최솟값을 알 경우 사용한다.
+
+
+**정규화와 표준화는 방식의 차이일 뿐이므로 범위 조정에 대해 성능을 비교하지는 않는다. 단지 알고리즘 중 isolation forest에서 Class 라벨과의 오차를 계산하여야 하기 때문에, 최대 최소 정규화를 하도록 한다.**
+
+
+```{r echo=TRUE, warning=TRUE}
+
+
+# 기술통계량(descriptive statistics) 함수 for every variable in the dataset.
+# 기술통계량을 전체 데이터에서 구해주는 함수 생성
+get_desc <- function(x) {
+    map(x, ~list(
+    min = min(.x),
+    max = max(.x),
+    mean = mean(.x),
+    sd = sd(.x)))
+}
+
+
+# 정규화 함수
+# : 전체 dataset에서 min-max normalized version된 최대-최소 정규화를 해준다.
+library(purrr)
+normalization_minmax <- function(x, desc) {
+  map2_dfc(x, desc, ~(.x - .y$min)/(.y$max - .y$min))
+}
+
+
+# 정규화
+library(dplyr)
+desc <- df_train %>% 
+  select(-Class) %>% 
+  get_desc() #전체 dataset의 기술통계량을 구해주는 함수를 생성하여 정규화 함수의 파라미터로 주었다.
+
+
+x_train <- df_train %>% 
+  select(-Class) %>% 
+  normalization_minmax(desc) #df
+
+x_test <- df_test %>% 
+  select(-Class) %>% 
+  normalization_minmax(desc) #df
+
+y_train <- df_train$class #label(답지 역할)
+y_test <- df_test$Class #label(답지 역할)
+
+```
+
+#### **under sampling**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+library(ROSE)
+
+# under sampling
+x_train$Class <- df_train$Class #Class 붙여줌 for under sampling
+
+temp <- ovun.sample(Class~., data = x_train, method = "under", N = 770, seed = 1023)
+str(temp) #list형태로 under sampling 되었다.
+x_train_under <- temp$data #data로 바꿔준다.
+head(x_train_under)
+#seed 설정 이유 : random으로 under sampling data이 만들어질때 포함되는 데이터가 달라지기 때문에 (seed에 따라 정확도가 달라질 수 있다.)
+#원래는 seed 를 바꿔가면서 모형을 적합해야 하지만, 본 프로젝트의 목표는 적합한 알고리즘을 선정하는 것이므로, seed가 정해진 상황에서 
+# 알고리즘을 비교하기로 하였다. (김한용, 이우주, 불균형적인 이항 자료 분석을 위한 샘플링 알고리즘들의 성능비교 및 주의점, The Korean Journal of Applied Statistics (2017))
+
+##Under sampling은 train set의 갯수만 맞추어준다. 따라서 df_test 정규화 된 test를 사용하면 된다. (test data는 under-sampling 없음)
+table(x_train_under$Class) #0과 1의 비율을 1:1로 맞추어 주었다.
+
+x_train <- x_train %>% select(-Class)
+str(x_train) # 다시 class빼주었다.
+```
+
+
+#### SMOTE sampling의 문제를 해결 - K-fold CV(교차검증)의 옵션으로 smote sampling을 준다.
+
+정규화 된 train dataset을 trainControl을 사용하여 SMOTE Sampling해준다.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+## 교차검증을 위한 패키지 설치
+library(caret)
+```
+
+```{r}
+# 3) SMOTE - sampling data 정규화, smote sampling 된 데이터를 위한 절차
+# K-Fold CV (교차검증)
+# SMOTE sampling 교차검증의 option(sampling = "smote" )
+ctrl <- trainControl(method = "repeatedcv",
+                     number = 10,
+                     repeats = 10,
+                     verboseIter = FALSE,
+                     sampling = "smote")
+ctrl
+# trainControl으로 option을 설정해주고 caret::train()으로 알고리즘을 적용할 때마다 교차검증(repeatedCV)를 하면서 SMOTE sampling을 해준다.
+
+# set.seed(1024)
+# model_credit_smote <- train(Class~.,
+#                             data = ,
+#                             method = "",
+#                             preProcess = c("scale", "center"),
+#                             trControl = ctrl) 적용 예정
+
+```
+
+
+#### **Algorithm 에 적용할 3가지 데이터셋 완성**  
+
+- 정규화된 train / test data 
+- 정규화, under sampling된 train / test data 
+- 정규화, SMOTE sampling된 데이터 option
+
+```{r}
+save.image(file = "fds_sampling.RData")
+```
