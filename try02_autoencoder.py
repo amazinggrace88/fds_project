@@ -11,15 +11,18 @@ from sklearn.preprocessing import MinMaxScaler
 from imblearn.under_sampling import RandomUnderSampler
 from functools import partial
 import tensorflow as tf
+from tensorflow.keras import layers
 
+  
 # Mini_batch
 def suffle_batch(features, labels, batch_size):
-    rnd_idx = np.random.permutation(len(features))
+    rnd_idx = np.random.permutation(len(features))  # features 수 만큼의 순열을 만들어준다.
     n_batches = len(features) // batch_size
     for batch_idx in np.array_split(rnd_idx, n_batches):
         batch_x, batch_y = features[batch_idx], labels[batch_idx]
         yield batch_x, batch_y  # generator object 생성 -> yield 에서 값을 발생시킨다.(generate)
 
+#
 
 if __name__ == '__main__':
     # bring the data!
@@ -113,47 +116,51 @@ if __name__ == '__main__':
     - 4개의 layer 를 입력층에는 x_train 의 갯수만큼, 1층, 2층, 3층 순으로 뉴런 갯수를 정하여 나비모양(출력층 : x_train 의 갯수)으로 만든다.
     - 활성화 함수 : hyperbolic tan(x)
     """
-    # layer params
-    n_inputs = X_train.shape[0] * X_train.shape[1]
-    n_hidden1 = 15
-    n_hidden2 = 10
-    n_hidden3 = 15
-    n_outputs = n_inputs
-
-    # train params
+    # Training Parameters
     """
-    train parameter - learning rate / l2_reg 는 임의지정 
+    train parameter - learning rate / l2_reg 는 임의지정
     """
-    learning_rate = 0.001  # 임의 지정
+    learning_rate = 0.01  # 임의 지정
     l2_reg = 0.0001  # 임의 지정
     n_epochs = 100
     batch_size = 32
     n_batches = len(X_train) // batch_size
 
+    # Layer Parameters
+    print('X_train.shape = ', X_train.shape)  # (770, 30)
+    n_inputs = 30  # X_train.shape[1]
+    n_hidden1 = 15
+    n_hidden2 = 10
+    n_hidden3 = 15
+    n_outputs = n_inputs
+
     # set the layers using partial
-    he_init = tf.keras.initializers.he_normal()  # He 초기화 한 initializer
-    l2_regularizer = tf.contrib.layers.l2_regularizer(scale=l2_reg)  # L2 규제 : overfitting 억제
+    he_init = tf.keras.initializers.he_normal(seed=106)  # He 초기화 한 initializer
+    l2_regularizer = tf.keras.regularizers.l2(l=0.01)  # L2 규제 : overfitting 억제
     dense_layer = partial(tf.layers.dense, activation=tf.nn.tanh, kernel_regularizer=l2_regularizer)
-    # tf.nn.tanh 를 사용하였다. (R - tanh 함수 사용하였으므로)
+    # tf.nn.tanh 를 사용 (R - tanh 함수 사용하였으므로)
     # 성능 개선에서는 tf.nn.elu 사용 예정 - ReLU 의 특성 공유, gradient 가 죽지 않는다는 장점 가짐
+
+    # placeholder 를 통해 변수 정의
     inputs = tf.placeholder(tf.float32, shape=[None, n_inputs])
+    print(type(inputs))  # <class 'tensorflow.python.framework.ops.Tensor'>
 
     # stacked autoencoder
-    hidden1 = dense_layer(inputs, n_hidden1)
-    hidden2 = dense_layer(hidden1, n_hidden2)
-    hidden3 = dense_layer(hidden2, n_hidden3)
-    outputs = dense_layer(hidden3, n_outputs, activation=None)
+    hidden1 = layers.Dense(inputs, n_hidden1)
+    # hidden2 = layers.Dense(hidden1, n_hidden2)
+    # hidden3 = layers.Dense(hidden2, n_hidden3)
+    # outputs = layers.Dense(hidden3, n_outputs, activation=None)
 
     # loss 질문하기
-    reconstruction_loss = tf.reduce_mean(tf.square(outputs - inputs))  # MSE 인가 ?
-    reg_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)  # 이해 안됨.. reg_loss ?
-    loss = tf.add_n([reconstruction_loss] + reg_losses)  # add_n : element 끼리 더함
-
-    # optimizer
-    train_op = tf.train.AdamOptimizer(learning_rate).minimize(loss)  # R 과 같은 AdamOptimizer 사용
-
-    # saver
-    saver = tf.train.Saver(max_to_keep=1)  # saver 에 1개의 model 만을 저장한다.
+    # reconstruction_loss = tf.reduce_mean(tf.square(outputs - inputs))  # MSE 인가 ?
+    # reg_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)  # 이해 안됨.. reg_loss ?
+    # loss = tf.add_n([reconstruction_loss] + reg_losses)  # add_n : element 끼리 더함
+    #
+    # # optimizer
+    # train_op = tf.train.AdamOptimizer(learning_rate).minimize(loss)  # R 과 같은 AdamOptimizer 사용
+    #
+    # # saver
+    # saver = tf.train.Saver(max_to_keep=1)  # saver 에 1개의 model 만을 저장한다.
     """
     다음 목표 : 
     https://github.com/NVIDIA/DeepRecommender - autoencoder 를 이용한 검색 엔진도 구현해보자
