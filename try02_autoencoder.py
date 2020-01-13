@@ -1,6 +1,5 @@
 """
 R fds project in python
-
 - Autoencoder
 """
 from collections import Counter
@@ -22,7 +21,11 @@ def suffle_batch(features, labels, batch_size):
         batch_x, batch_y = features[batch_idx], labels[batch_idx]
         yield batch_x, batch_y  # generator object 생성 -> yield 에서 값을 발생시킨다.(generate)
 
-#
+# indexing for X_train[X_train.Class == 0]
+def mask(X_train, y_train):
+    for row in X_train:
+        if row['Class']:
+            enumerate()
 
 if __name__ == '__main__':
     # bring the data!
@@ -98,6 +101,16 @@ if __name__ == '__main__':
     sampler = RandomUnderSampler(sampling_strategy=sampling_strategy, random_state=0)
     X_train, y_train = sampler.fit_sample(X_train, y_train)
     print('Class after UnderSampling : \n', Counter(y_train))  # Counter({0: 578, 1: 192}) - 2 : 1 비율
+    """
+    autoencoder 는 X_train 의 정상적 데이터 X_train[X_train.class == 0]인 데이터만 넣어 출력한다.    
+    """
+    df_train = pd.concat([X_train, y_train], axis=1)
+    X_train = df_train[df_train.Class == 0]
+    print('X_train Count = ', Counter(X_train.Class))
+    y_train_zero = X_train['Class']
+    X_train_zero = X_train.drop(['Class'], axis=1)
+    print('final input X_train =', X_train_zero.head(), sep='\n')
+    print('final input y_train =', y_train_zero.head(), sep='\n')
     print('================================================')
     print()
 
@@ -135,18 +148,23 @@ if __name__ == '__main__':
     n_outputs = n_inputs
 
     # set the layers using partial
-    he_init = tf.keras.initializers.he_normal(seed=106)  # He 초기화 한 initializer
+    he_init = tf.keras.initializers.glorot_normal(seed=113)  # activation function : tanh 이기 때문에 Xavier 초기값 사용
     l2_regularizer = tf.keras.regularizers.l2(l=0.01)  # L2 규제 : overfitting 억제
     dense_layer = partial(tf.layers.dense, activation=tf.nn.tanh, kernel_regularizer=l2_regularizer)
     # tf.nn.tanh 를 사용 (R - tanh 함수 사용하였으므로)
-    # 성능 개선에서는 tf.nn.elu 사용 예정 - ReLU 의 특성 공유, gradient 가 죽지 않는다는 장점 가짐
+    # 성능 개선에서는 he 초기값 & tf.nn.elu 사용 예정 - ReLU 의 특성 공유, gradient 가 죽지 않는다는 장점 가짐
 
-    # placeholder 를 통해 변수 정의
+    # 
+
+
+
+
+    # placeholder 를 통해  정의
     inputs = tf.placeholder(tf.float32, shape=[None, n_inputs])
     print(type(inputs))  # <class 'tensorflow.python.framework.ops.Tensor'>
 
     # stacked autoencoder
-    hidden1 = layers.Dense(inputs, n_hidden1)
+    # hidden1 = layers.Dense(inputs, n_hidden1)
     # hidden2 = layers.Dense(hidden1, n_hidden2)
     # hidden3 = layers.Dense(hidden2, n_hidden3)
     # outputs = layers.Dense(hidden3, n_outputs, activation=None)
