@@ -22,10 +22,11 @@ def suffle_batch(features, labels, batch_size):
         yield batch_x, batch_y  # generator object 생성 -> yield 에서 값을 발생시킨다.(generate)
 
 # indexing for X_train[X_train.Class == 0]
-def mask(X_train, y_train):
-    for row in X_train:
-        if row['Class']:
-            enumerate()
+# def mask(X_train, y_train):
+#     for row in X_train:
+#         if row['Class']:
+#             enumerate()
+
 
 if __name__ == '__main__':
     # bring the data!
@@ -89,23 +90,26 @@ if __name__ == '__main__':
     print('================================================')
     print()
 
-    # 2. undersampling
-    print('< UnderSampling >')
-    # df_train - X_train, y_train / df_test - X_test, y_test
-    X_train = df_train.drop(['Class'], axis=1)
-    y_train = df_train['Class']
-    X_test = df_test.drop(['Class'], axis=1)
-    y_test = df_test['Class']
-    # RandomUnderSampler 를 통해 train data 만 undersampling 을 수행
-    sampling_strategy = {0: 578, 1: 192}
-    sampler = RandomUnderSampler(sampling_strategy=sampling_strategy, random_state=0)
-    X_train, y_train = sampler.fit_sample(X_train, y_train)
-    print('Class after UnderSampling : \n', Counter(y_train))  # Counter({0: 578, 1: 192}) - 2 : 1 비율
+    # 2. validation data 
     """
     autoencoder 는 X_train 의 정상적 데이터 X_train[X_train.class == 0]인 데이터만 넣어 출력한다.    
     """
-    df_train = pd.concat([X_train, y_train], axis=1)
+
+    # print('< UnderSampling >')
+    # # df_train - X_train, y_train / df_test - X_test, y_test
+    # X_train = df_train.drop(['Class'], axis=1)
+    # y_train = df_train['Class']
+    # X_test = df_test.drop(['Class'], axis=1)
+    # y_test = df_test['Class']
+    # # RandomUnderSampler 를 통해 train data 만 undersampling 을 수행
+    # sampling_strategy = {0: 578, 1: 192}
+    # sampler = RandomUnderSampler(sampling_strategy=sampling_strategy, random_state=0)
+    # X_train, y_train = sampler.fit_sample(X_train, y_train)
+    # print('Class after UnderSampling : \n', Counter(y_train))  # Counter({0: 578, 1: 192}) - 2 : 1 비율
+    # df_train = pd.concat([X_train, y_train], axis=1)
     X_train = df_train[df_train.Class == 0]
+    y_train = X_train['Class']
+    X_train = X_train.drop(['Class'], axis=1)
     print('X_train Count = ', Counter(X_train.Class))
     y_train_zero = X_train['Class']
     X_train_zero = X_train.drop(['Class'], axis=1)
@@ -154,7 +158,7 @@ if __name__ == '__main__':
     # tf.nn.tanh 를 사용 (R - tanh 함수 사용하였으므로)
     # 성능 개선에서는 he 초기값 & tf.nn.elu 사용 예정 - ReLU 의 특성 공유, gradient 가 죽지 않는다는 장점 가짐
 
-    # 
+    # flow
 
 
 
